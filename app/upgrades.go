@@ -7,13 +7,11 @@ import (
 
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 
-	cmtbfttypes "github.com/cometbft/cometbft/types"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	consensustypes "github.com/cosmos/cosmos-sdk/x/consensus/types"
 	crisistypes "github.com/cosmos/cosmos-sdk/x/crisis/types"
 	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
@@ -38,7 +36,6 @@ import (
 	v050 "github.com/CosmWasm/wasmd/app/upgrades/v050"
 	v2 "github.com/CosmWasm/wasmd/x/wasm/migrations/v2"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
-	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 )
 
 // Upgrades list of chain upgrades
@@ -70,51 +67,51 @@ func (app *WasmApp) RegisterUpgradeHandlers() {
 				upgrade.UpgradeName,
 				func(ctx context.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
 
-					// special case, we need to resolve this issue: https://github.com/cosmos/cosmos-sdk/issues/20160
-					defaultConsensusParams := cmtbfttypes.DefaultConsensusParams()
-					cp := cmtproto.ConsensusParams{
-						Block: &cmtproto.BlockParams{
-							// hard-coded max bytes like in prod params
-							MaxBytes: 1048576,
-							MaxGas:   defaultConsensusParams.Block.MaxGas,
-						},
-						Evidence: &cmtproto.EvidenceParams{
-							MaxAgeNumBlocks: defaultConsensusParams.Evidence.MaxAgeNumBlocks,
-							MaxAgeDuration:  defaultConsensusParams.Evidence.MaxAgeDuration,
-							MaxBytes:        defaultConsensusParams.Evidence.MaxBytes,
-						},
-						Validator: &cmtproto.ValidatorParams{
-							PubKeyTypes: defaultConsensusParams.Validator.PubKeyTypes,
-						},
-						Version: defaultConsensusParams.ToProto().Version, // Version is stored in x/upgrade
-					}
-					err := app.ConsensusParamsKeeper.ParamsStore.Set(ctx, cp)
-					if err != nil {
-						return nil, err
-					}
+					// // special case, we need to resolve this issue: https://github.com/cosmos/cosmos-sdk/issues/20160
+					// defaultConsensusParams := cmtbfttypes.DefaultConsensusParams()
+					// cp := cmtproto.ConsensusParams{
+					// 	Block: &cmtproto.BlockParams{
+					// 		// hard-coded max bytes like in prod params
+					// 		MaxBytes: 1048576,
+					// 		MaxGas:   defaultConsensusParams.Block.MaxGas,
+					// 	},
+					// 	Evidence: &cmtproto.EvidenceParams{
+					// 		MaxAgeNumBlocks: defaultConsensusParams.Evidence.MaxAgeNumBlocks,
+					// 		MaxAgeDuration:  defaultConsensusParams.Evidence.MaxAgeDuration,
+					// 		MaxBytes:        defaultConsensusParams.Evidence.MaxBytes,
+					// 	},
+					// 	Validator: &cmtproto.ValidatorParams{
+					// 		PubKeyTypes: defaultConsensusParams.Validator.PubKeyTypes,
+					// 	},
+					// 	Version: defaultConsensusParams.ToProto().Version, // Version is stored in x/upgrade
+					// }
+					// err := app.ConsensusParamsKeeper.ParamsStore.Set(ctx, cp)
+					// if err != nil {
+					// 	return nil, err
+					// }
 
-					// actually update consensus param keeper store
-					Authority := authtypes.NewModuleAddress(govtypes.ModuleName)
-					AuthorityAddr := Authority.String()
-					updateConsensusParamStore := consensustypes.MsgUpdateParams{Authority: AuthorityAddr, Block: cp.Block, Evidence: cp.Evidence, Validator: cp.Validator, Abci: cp.Abci}
-					_, err = app.ConsensusParamsKeeper.UpdateParams(ctx, &updateConsensusParamStore)
-					if err != nil {
-						return nil, err
-					}
+					// // actually update consensus param keeper store
+					// Authority := authtypes.NewModuleAddress(govtypes.ModuleName)
+					// AuthorityAddr := Authority.String()
+					// updateConsensusParamStore := consensustypes.MsgUpdateParams{Authority: AuthorityAddr, Block: cp.Block, Evidence: cp.Evidence, Validator: cp.Validator, Abci: cp.Abci}
+					// _, err = app.ConsensusParamsKeeper.UpdateParams(ctx, &updateConsensusParamStore)
+					// if err != nil {
+					// 	return nil, err
+					// }
 
 					sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 					// upgrade ica capability
-					err = app.upgradeIcaController(sdkCtx)
+					err := app.upgradeIcaController(sdkCtx)
 					if err != nil {
 						panic(err)
 					}
 
 					// upgrade mint module params
-					err = app.upgradeMintParams(sdkCtx)
-					if err != nil {
-						panic(err)
-					}
+					// err = app.upgradeMintParams(sdkCtx)
+					// if err != nil {
+					// 	panic(err)
+					// }
 
 					return app.ModuleManager.RunMigrations(ctx, app.configurator, fromVM)
 				},
@@ -159,6 +156,56 @@ func (app *WasmApp) upgradeIcaController(ctx sdk.Context) error {
 		// if not found then try to add capability for chanel
 		if !found {
 			_, err := app.ScopedICAControllerKeeper.NewCapability(ctx, name)
+			if err != nil {
+				return err
+			}
+		}
+
+		_, found = app.ScopedIBCKeeper.GetCapability(ctx, name)
+
+		// if not found then try to add capability for chanel
+		if !found {
+			_, err := app.ScopedIBCKeeper.NewCapability(ctx, name)
+			if err != nil {
+				return err
+			}
+		}
+
+		_, found = app.ScopedICAHostKeeper.GetCapability(ctx, name)
+
+		// if not found then try to add capability for chanel
+		if !found {
+			_, err := app.ScopedICAHostKeeper.NewCapability(ctx, name)
+			if err != nil {
+				return err
+			}
+		}
+
+		_, found = app.ScopedTransferKeeper.GetCapability(ctx, name)
+
+		// if not found then try to add capability for chanel
+		if !found {
+			_, err := app.ScopedTransferKeeper.NewCapability(ctx, name)
+			if err != nil {
+				return err
+			}
+		}
+
+		_, found = app.ScopedWasmKeeper.GetCapability(ctx, name)
+
+		// if not found then try to add capability for chanel
+		if !found {
+			_, err := app.ScopedWasmKeeper.NewCapability(ctx, name)
+			if err != nil {
+				return err
+			}
+		}
+
+		_, found = app.ScopedTransferKeeper.GetCapability(ctx, name)
+
+		// if not found then try to add capability for chanel
+		if !found {
+			_, err := app.ScopedTransferKeeper.NewCapability(ctx, name)
 			if err != nil {
 				return err
 			}
